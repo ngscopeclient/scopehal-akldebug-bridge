@@ -32,6 +32,7 @@
 
 #include "../../lib/log/log.h"
 #include "../../lib/xptools/Socket.h"
+#include "../../lib/xptools/UART.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -56,5 +57,16 @@ extern volatile bool g_waveformThreadQuit;
 
 extern bool g_triggerArmed;
 extern bool g_triggerOneShot;
+
+enum opcode_t
+{
+	OP_RESET	= 0x80,
+	OP_WRITE_32	= 0x81,
+	OP_READ_32	= 0x82,
+
+	OP_GET_BASE	= 0xfd,
+	OP_IDCODE	= 0xfe,
+	OP_NOP		= 0xff
+};
 
 #endif

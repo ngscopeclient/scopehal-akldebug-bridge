@@ -36,6 +36,7 @@
 #include "aklbridge.h"
 //#include "AseqSCPIServer.h"
 #include <signal.h>
+#include <string.h>
 
 using namespace std;
 
@@ -47,7 +48,7 @@ void help();
 void help()
 {
 	fprintf(stderr,
-			"aklbridge [general options] [logger options]\n"
+			"aklbridge [general options] [logger options] /dev/ttyX 115200\n"
 			"\n"
 			"  [general options]:\n"
 			"    --help                        : this message...\n"
@@ -78,6 +79,10 @@ void OnQuit(int signal);
 
 bool g_triggerArmed;
 
+UART* g_uart = nullptr;
+
+uint32_t ReadRegister(uint32_t addr);
+
 int main(int argc, char* argv[])
 {
 	//Global settings
@@ -86,6 +91,8 @@ int main(int argc, char* argv[])
 	//Parse command-line arguments
 	uint16_t scpi_port = 5025;
 	uint16_t waveform_port = 5026;
+	string uartPath = "";
+	int uartBaud = 115200;
 	for(int i=1; i<argc; i++)
 	{
 		string s(argv[i]);
@@ -112,6 +119,14 @@ int main(int argc, char* argv[])
 				waveform_port = atoi(argv[++i]);
 		}
 
+		else if(s[0] != '-')
+		{
+			if(uartPath.empty())
+				uartPath = argv[i];
+			else
+				uartBaud = atoi(argv[i]);
+		}
+
 		else
 		{
 			fprintf(stderr, "Unrecognized command-line argument \"%s\", use --help\n", s.c_str());
@@ -122,7 +137,61 @@ int main(int argc, char* argv[])
 	//Set up logging
 	g_log_sinks.emplace(g_log_sinks.begin(), new ColoredSTDLogSink(console_verbosity));
 
-	//TODO initialize
+	//Initialize the UART
+	UART uart(uartPath, uartBaud);
+	g_uart = &uart;
+
+	LogNotice("Initializing...\n");
+	{
+		LogIndenter li;
+
+		//Send 16 nops then a reset command
+		LogNotice("Resetting debug bus...\n");
+		uint8_t resetBuf[17];
+		for(int i=0; i<16; i++)
+			resetBuf[i] = OP_NOP;
+		resetBuf[16] = OP_RESET;
+		uart.Write(resetBuf, sizeof(resetBuf));
+
+		//Flush any junk that might be in the rx buffer
+		usleep(250 * 1000);
+		uart.FlushRxBuffer();
+
+		//Read the ID code
+		uint8_t idcmd = OP_IDCODE;
+		uart.Write(&idcmd, sizeof(idcmd));
+		char idcode[5] = {0};
+		uart.Read((uint8_t*)idcode,   4);
+		LogNotice("Debug bridge ID:   %s\n", idcode);
+		if(strcmp(idcode, "APB_") != 0)
+		{
+			LogError("Invalid IDCODE, bailing out\n");
+			return 1;
+		}
+
+		//Read the ROM table base address
+		uint8_t romcmd = OP_GET_BASE;
+		uart.Write(&romcmd, sizeof(romcmd));
+		uint32_t rombase;
+		uart.Read((uint8_t*)&rombase, sizeof(rombase));
+		LogNotice("Debug ROM address: 0x%08x\n", rombase);
+
+		//Walk the ROM
+		const uint32_t rom_max = 4;	//TODO increase this
+		for(uint32_t i=0; i<rom_max; i++)
+		{
+			auto type = ReadRegister(rombase + i*8);
+			auto typeswap = __builtin_bswap32(type);	//reverse endianness since string is big endian on the device
+			memcpy(idcode, &typeswap, sizeof(typeswap));
+			auto base = ReadRegister(rombase + i*8 + 4);
+
+			//all-zero entry indicates the end of the ROM table
+			if(type == 0)
+				break;
+
+			LogDebug("[%u] type = %08x (%4s) at 0x%08x\n", i, type, idcode, base);
+		}
+	}
 
 	/*
 	//Set up signal handlers
@@ -166,6 +235,18 @@ int main(int argc, char* argv[])
 
 	OnQuit(SIGQUIT);
 	return 0;
+}
+
+uint32_t ReadRegister(uint32_t addr)
+{
+	uint8_t txbuf[5];
+	txbuf[0] = OP_READ_32;
+	memcpy(&txbuf[1], &addr, sizeof(addr));
+	g_uart->Write(txbuf, sizeof(txbuf));
+
+	uint32_t regval = 0;
+	g_uart->Read((uint8_t*)&regval, sizeof(regval));
+	return regval;
 }
 
 #ifdef _WIN32
