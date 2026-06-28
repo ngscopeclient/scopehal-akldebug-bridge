@@ -1,6 +1,6 @@
 /***********************************************************************************************************************
 *                                                                                                                      *
-* aklbridge                                                                                                            *
+* aklbridge                                                                                                           *
 *                                                                                                                      *
 * Copyright (c) 2012-2026 Andrew D. Zonenberg                                                                          *
 * All rights reserved.                                                                                                 *
@@ -27,49 +27,45 @@
 *                                                                                                                      *
 ***********************************************************************************************************************/
 
-#ifndef ps6000d_h
-#define ps6000d_h
+/**
+	@file
+	@author Andrew D. Zonenberg
+	@brief Declaration of GPIOSCPIServer
+ */
 
-#include "../../lib/log/log.h"
-#include "../../lib/xptools/Socket.h"
-#include "../../lib/xptools/UART.h"
+#ifndef GPIOSCPIServer_h
+#define GPIOSCPIServer_h
 
-#ifdef _WIN32
-#include <windows.h>
-#include <shlwapi.h>
-#endif
+#include "../../lib/scpi-server-tools/SCPIServer.h"
 
-#include <thread>
-#include <map>
-#include <mutex>
-
-extern Socket g_scpiSocket;
-extern Socket g_dataSocket;
-
-void WaveformServerThread();
-
-extern std::string g_model;
-extern std::string g_serial;
-
-extern std::mutex g_mutex;
-
-extern volatile bool g_waveformThreadQuit;
-
-extern bool g_triggerArmed;
-extern bool g_triggerOneShot;
-
-enum opcode_t
+/**
+	@brief SCPI server for managing control plane traffic to a single client
+ */
+class GPIOSCPIServer : public SCPIServer
 {
-	OP_RESET	= 0x80,
-	OP_WRITE_32	= 0x81,
-	OP_READ_32	= 0x82,
+public:
+	GPIOSCPIServer(ZSOCKET sock, uint32_t baseAddress);
+	virtual ~GPIOSCPIServer();
 
-	OP_GET_BASE	= 0xfd,
-	OP_IDCODE	= 0xfe,
-	OP_NOP		= 0xff
+protected:
+
+	std::string GetMake();
+	std::string GetModel();
+	std::string GetSerial();
+	std::string GetFirmwareVersion();
+
+	virtual bool OnCommand(
+		const std::string& line,
+		const std::string& subject,
+		const std::string& cmd,
+		const std::vector<std::string>& args) override;
+
+	virtual bool OnQuery(
+		const std::string& line,
+		const std::string& subject,
+		const std::string& cmd) override;
+
+	uint32_t m_baseAddress;
 };
-
-uint32_t ReadRegister(uint32_t addr);
-void WriteRegister(uint32_t addr, uint32_t value);
 
 #endif

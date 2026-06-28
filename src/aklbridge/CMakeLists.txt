@@ -1,7 +1,7 @@
 ###############################################################################
 #C++ compilation
 add_executable(aklbridge
-	#AseqSCPIServer.cpp
+	GPIOSCPIServer.cpp
 	#WaveformServerThread.cpp
 	main.cpp
 )

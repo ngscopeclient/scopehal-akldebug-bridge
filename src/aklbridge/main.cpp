@@ -34,14 +34,11 @@
  */
 
 #include "aklbridge.h"
-//#include "AseqSCPIServer.h"
+#include "GPIOSCPIServer.h"
 #include <signal.h>
 #include <string.h>
 
 using namespace std;
-
-//vector<string> explode(const string& str, char separator);
-//string Trim(const string& str);
 
 void help();
 
@@ -52,8 +49,8 @@ void help()
 			"\n"
 			"  [general options]:\n"
 			"    --help                        : this message...\n"
-			"    --scpi-port port              : specifies the SCPI control plane port (default 5025)\n"
-			"    --waveform-port port          : specifies the binary waveform data port (default 5026)\n"
+			"    --scpi-port port              : specifies the base SCPI control plane port (default 5025)\n"
+		//	"    --waveform-port port          : specifies the binary waveform data port (default 5026)\n"
 			"\n"
 			"  [logger options]:\n"
 			"    levels: ERROR, WARNING, NOTICE, VERBOSE, DEBUG\n"
@@ -68,9 +65,6 @@ void help()
 		   );
 }
 
-Socket g_scpiSocket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
-Socket g_dataSocket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
-
 #ifdef _WIN32
 BOOL WINAPI OnQuit(DWORD signal);
 #else
@@ -79,9 +73,13 @@ void OnQuit(int signal);
 
 bool g_triggerArmed;
 
+mutex g_mutex;
 UART* g_uart = nullptr;
 
-uint32_t ReadRegister(uint32_t addr);
+vector<shared_ptr<Socket> > g_listenerSockets;
+vector<unique_ptr<thread> > g_listenerThreads;
+
+void GPIOListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> listener);
 
 int main(int argc, char* argv[])
 {
@@ -90,7 +88,7 @@ int main(int argc, char* argv[])
 
 	//Parse command-line arguments
 	uint16_t scpi_port = 5025;
-	uint16_t waveform_port = 5026;
+	//uint16_t waveform_port = 5026;
 	string uartPath = "";
 	int uartBaud = 115200;
 	for(int i=1; i<argc; i++)
@@ -112,12 +110,12 @@ int main(int argc, char* argv[])
 			if(i+1 < argc)
 				scpi_port = atoi(argv[++i]);
 		}
-
+	/*
 		else if(s == "--waveform-port")
 		{
 			if(i+1 < argc)
 				waveform_port = atoi(argv[++i]);
-		}
+		}*/
 
 		else if(s[0] != '-')
 		{
@@ -141,6 +139,7 @@ int main(int argc, char* argv[])
 	UART uart(uartPath, uartBaud);
 	g_uart = &uart;
 
+	uint16_t nextPort = scpi_port;
 	LogNotice("Initializing...\n");
 	{
 		LogIndenter li;
@@ -184,16 +183,30 @@ int main(int argc, char* argv[])
 			auto typeswap = __builtin_bswap32(type);	//reverse endianness since string is big endian on the device
 			memcpy(idcode, &typeswap, sizeof(typeswap));
 			auto base = ReadRegister(rombase + i*8 + 4);
+			string stype = idcode;
 
 			//all-zero entry indicates the end of the ROM table
 			if(type == 0)
 				break;
 
 			LogDebug("[%u] type = %08x (%4s) at 0x%08x\n", i, type, idcode, base);
+			LogIndenter li2;
+
+			if(stype == "GPIO")
+			{
+				//Create the server socket
+				auto listener = make_shared<Socket>(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+				g_listenerSockets.push_back(listener);
+
+				//Run the server
+				g_listenerThreads.push_back(make_unique<thread>(GPIOListenerThread, base, nextPort, listener));
+				nextPort ++;
+			}
+			else
+				LogDebug("Unrecognized debug IP type, ignoring\n");
 		}
 	}
 
-	/*
 	//Set up signal handlers
 #ifdef _WIN32
 	SetConsoleCtrlHandler(OnQuit, TRUE);
@@ -202,43 +215,40 @@ int main(int argc, char* argv[])
 	signal(SIGPIPE, SIG_IGN);
 #endif
 
-	//Configure the data plane socket
-	g_dataSocket.Bind(waveform_port);
-	g_dataSocket.Listen();
-
-	//Launch the control plane socket server
-	g_scpiSocket.Bind(scpi_port);
-	g_scpiSocket.Listen();
-
 	LogDebug("Ready\n");
 
-	while(true)
-	{
-		Socket scpiClient = g_scpiSocket.Accept();
-		if(!scpiClient.IsValid())
-			break;
-
-		//Create a server object for this connection
-		AseqSCPIServer server(scpiClient.Detach());
-
-		//Launch the data-plane thread
-		thread dataThread(WaveformServerThread);
-
-		//Process connections on the socket
-		server.MainLoop();
-
-		g_waveformThreadQuit = true;
-		dataThread.join();
-		g_waveformThreadQuit = false;
-	}
-	*/
+	//Wait for all threads to terminate and clean up gracefully
+	for(auto& thread : g_listenerThreads)
+		thread->join();
 
 	OnQuit(SIGQUIT);
 	return 0;
 }
 
+void GPIOListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> listener)
+{
+	LogDebug("GPIOListenerThread running on port %d\n", (int)port);
+
+	listener->Bind(port);
+	listener->Listen();
+
+	while(true)
+	{
+		Socket client = listener->Accept();
+		if(!client.IsValid())
+			break;
+
+		GPIOSCPIServer server(client.Detach(), baseAddress);
+		server.MainLoop();
+	}
+
+	exit(1);
+}
+
 uint32_t ReadRegister(uint32_t addr)
 {
+	lock_guard<mutex> lock(g_mutex);
+
 	uint8_t txbuf[5];
 	txbuf[0] = OP_READ_32;
 	memcpy(&txbuf[1], &addr, sizeof(addr));
@@ -247,6 +257,17 @@ uint32_t ReadRegister(uint32_t addr)
 	uint32_t regval = 0;
 	g_uart->Read((uint8_t*)&regval, sizeof(regval));
 	return regval;
+}
+
+void WriteRegister(uint32_t addr, uint32_t value)
+{
+	lock_guard<mutex> lock(g_mutex);
+
+	uint8_t txbuf[9];
+	txbuf[0] = OP_WRITE_32;
+	memcpy(&txbuf[1], &addr, sizeof(addr));
+	memcpy(&txbuf[5], &value, sizeof(value));
+	g_uart->Write(txbuf, sizeof(txbuf));
 }
 
 #ifdef _WIN32
@@ -259,64 +280,8 @@ void OnQuit(int /*signal*/)
 #endif
 	LogNotice("Shutting down...\n");
 
+	for(auto& sock : g_listenerSockets)
+		sock->Close();
+
 	exit(0);
 }
-
-/**
-	@brief Splits a string up into an array separated by delimiters
- */
- /*
-vector<string> explode(const string& str, char separator)
-{
-	vector<string> ret;
-	string tmp;
-	for(auto c : str)
-	{
-		if(c == separator)
-		{
-			if(!tmp.empty())
-				ret.push_back(tmp);
-			tmp = "";
-		}
-		else
-			tmp += c;
-	}
-	if(!tmp.empty())
-		ret.push_back(tmp);
-	return ret;
-}
-*/
-
-/**
-	@brief Removes whitespace from the start and end of a string
- */
- /*
-string Trim(const string& str)
-{
-	string ret;
-	string tmp;
-
-	//Skip leading spaces
-	size_t i=0;
-	for(; i<str.length() && isspace(str[i]); i++)
-	{}
-
-	//Read non-space stuff
-	for(; i<str.length(); i++)
-	{
-		//Non-space
-		char c = str[i];
-		if(!isspace(c))
-		{
-			ret = ret + tmp + c;
-			tmp = "";
-		}
-
-		//Space. Save it, only append if we have non-space after
-		else
-			tmp += c;
-	}
-
-	return ret;
-}
-*/

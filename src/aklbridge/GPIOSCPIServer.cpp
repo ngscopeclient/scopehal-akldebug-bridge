@@ -1,6 +1,6 @@
 /***********************************************************************************************************************
 *                                                                                                                      *
-* aklbridge                                                                                                            *
+* aklbridge                                                                                                           *
 *                                                                                                                      *
 * Copyright (c) 2012-2026 Andrew D. Zonenberg                                                                          *
 * All rights reserved.                                                                                                 *
@@ -27,49 +27,131 @@
 *                                                                                                                      *
 ***********************************************************************************************************************/
 
-#ifndef ps6000d_h
-#define ps6000d_h
+#include "aklbridge.h"
+#include "GPIOSCPIServer.h"
+#include <stdexcept>
 
-#include "../../lib/log/log.h"
-#include "../../lib/xptools/Socket.h"
-#include "../../lib/xptools/UART.h"
+using namespace std;
 
-#ifdef _WIN32
-#include <windows.h>
-#include <shlwapi.h>
-#endif
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Construction / destruction
 
-#include <thread>
-#include <map>
-#include <mutex>
-
-extern Socket g_scpiSocket;
-extern Socket g_dataSocket;
-
-void WaveformServerThread();
-
-extern std::string g_model;
-extern std::string g_serial;
-
-extern std::mutex g_mutex;
-
-extern volatile bool g_waveformThreadQuit;
-
-extern bool g_triggerArmed;
-extern bool g_triggerOneShot;
-
-enum opcode_t
+GPIOSCPIServer::GPIOSCPIServer(ZSOCKET sock, uint32_t baseAddress)
+	: SCPIServer(sock)
+	, m_baseAddress(baseAddress)
 {
-	OP_RESET	= 0x80,
-	OP_WRITE_32	= 0x81,
-	OP_READ_32	= 0x82,
+}
 
-	OP_GET_BASE	= 0xfd,
-	OP_IDCODE	= 0xfe,
-	OP_NOP		= 0xff
-};
+GPIOSCPIServer::~GPIOSCPIServer()
+{
+}
 
-uint32_t ReadRegister(uint32_t addr);
-void WriteRegister(uint32_t addr, uint32_t value);
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Command processing
 
-#endif
+bool GPIOSCPIServer::OnCommand(
+	[[maybe_unused]] const string& line,
+	const string& subject,
+    const string& cmd,
+    const vector<string>& args)
+{
+	if(subject == "GPIO")
+	{
+		//Can't write to the input value, so skip that
+
+		//GPIO output value
+		if((cmd == "OUTVAL") && (args.size() == 1) )
+		{
+			uint32_t value;
+			sscanf(args[0].c_str(), "%x", &value);
+			WriteRegister(m_baseAddress + 0x0, value);
+		}
+
+		//GPIO tristate value
+		else if( (cmd == "TRIS") && (args.size() == 1) )
+		{
+			uint32_t value;
+			sscanf(args[0].c_str(), "%x", &value);
+			WriteRegister(m_baseAddress + 0x8, value);
+		}
+
+		else
+			return false;
+	}
+
+	else
+		return false;
+
+	return true;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Query processing
+
+string GPIOSCPIServer::GetMake()
+{
+	return "Antikernel Labs";
+}
+
+string GPIOSCPIServer::GetModel()
+{
+	return "APB GPIO";
+}
+
+string GPIOSCPIServer::GetSerial()
+{
+	return "None";
+}
+
+string GPIOSCPIServer::GetFirmwareVersion()
+{
+	return "1.0";
+}
+
+bool GPIOSCPIServer::OnQuery(
+	[[maybe_unused]] const string& line,
+	const string& subject,
+	const string& cmd)
+{
+	//Read ID code
+	if(cmd == "*IDN")
+		SendReply(GetMake() + "," + GetModel() + "," + GetSerial() + "," + GetFirmwareVersion());
+
+	else if(subject == "GPIO")
+	{
+		//Read the GPIO input value
+		if(cmd == "INVAL")
+		{
+			char tmp[32];
+			snprintf(tmp, sizeof(tmp), "%08x", ReadRegister(m_baseAddress + 0x4));
+			SendReply(tmp);
+		}
+
+		//Read the GPIO output value
+		else if(cmd == "OUTVAL")
+		{
+			char tmp[32];
+			snprintf(tmp, sizeof(tmp), "%08x", ReadRegister(m_baseAddress + 0x0));
+			SendReply(tmp);
+		}
+
+		//Read the GPIO tristate value
+		else if(cmd == "TRIS")
+		{
+			char tmp[32];
+			snprintf(tmp, sizeof(tmp), "%08x", ReadRegister(m_baseAddress + 0x8));
+			SendReply(tmp);
+		}
+
+		//Invalid
+		else
+			return false;
+	}
+
+	//Nope, invalid command
+	else
+		return false;
+
+	//If we get here all good
+	return true;
+}
