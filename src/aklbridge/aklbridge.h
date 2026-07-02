@@ -51,6 +51,7 @@ void WaveformServerThread();
 extern std::string g_model;
 extern std::string g_serial;
 
+extern UART* g_uart;
 extern std::mutex g_mutex;
 
 extern volatile bool g_waveformThreadQuit;
@@ -71,5 +72,6 @@ enum opcode_t
 
 uint32_t ReadRegister(uint32_t addr);
 void WriteRegister(uint32_t addr, uint32_t value);
+std::string to_string_hex(uint64_t n, bool zeropad = false, int len = 0);
 
 #endif

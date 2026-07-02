@@ -30,22 +30,22 @@
 /**
 	@file
 	@author Andrew D. Zonenberg
-	@brief Declaration of GPIOSCPIServer
+	@brief Declaration of ILA8b10bSCPIServer
  */
 
-#ifndef GPIOSCPIServer_h
-#define GPIOSCPIServer_h
+#ifndef ILA8b10bSCPIServer_h
+#define ILA8b10bSCPIServer_h
 
 #include "../../lib/scpi-server-tools/SCPIServer.h"
 
 /**
-	@brief SCPI server for APB_GPIO IP
+	@brief SCPI server for APB_SerdesILA_8b10b IP
  */
-class GPIOSCPIServer : public SCPIServer
+class ILA8b10bSCPIServer : public SCPIServer
 {
 public:
-	GPIOSCPIServer(ZSOCKET sock, uint32_t baseAddress);
-	virtual ~GPIOSCPIServer();
+	ILA8b10bSCPIServer(ZSOCKET sock, uint32_t baseAddress);
+	virtual ~ILA8b10bSCPIServer();
 
 protected:
 
@@ -66,6 +66,10 @@ protected:
 		const std::string& cmd) override;
 
 	uint32_t m_baseAddress;
+	uint32_t m_dataBaseAddress;
+	uint32_t m_depth;
+
+	bool m_triggerArmed;
 };
 
 #endif

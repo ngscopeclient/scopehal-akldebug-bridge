@@ -35,6 +35,8 @@
 
 #include "aklbridge.h"
 #include "GPIOSCPIServer.h"
+#include "ILA8b10bSCPIServer.h"
+#include "VIOSCPIServer.h"
 #include <signal.h>
 #include <string.h>
 
@@ -80,6 +82,8 @@ vector<shared_ptr<Socket> > g_listenerSockets;
 vector<unique_ptr<thread> > g_listenerThreads;
 
 void GPIOListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> listener);
+void ILA8b10bListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> listener);
+void VIOListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> listener);
 
 int main(int argc, char* argv[])
 {
@@ -145,6 +149,7 @@ int main(int argc, char* argv[])
 		LogIndenter li;
 
 		//Send 16 nops then a reset command
+		//TODO: this should be an argument we don't necessarily WANT to reset on connection
 		LogNotice("Resetting debug bus...\n");
 		uint8_t resetBuf[17];
 		for(int i=0; i<16; i++)
@@ -202,8 +207,31 @@ int main(int argc, char* argv[])
 				g_listenerThreads.push_back(make_unique<thread>(GPIOListenerThread, base, nextPort, listener));
 				nextPort ++;
 			}
+			else if(stype == "VIO_")
+			{
+				//Create the server socket
+				auto listener = make_shared<Socket>(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+				g_listenerSockets.push_back(listener);
+
+				//Run the server
+				g_listenerThreads.push_back(make_unique<thread>(VIOListenerThread, base, nextPort, listener));
+				nextPort ++;
+			}
+			else if(stype == "8B10")
+			{
+				//Create the server socket
+				auto listener = make_shared<Socket>(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+				g_listenerSockets.push_back(listener);
+
+				//Run the server
+				g_listenerThreads.push_back(make_unique<thread>(ILA8b10bListenerThread, base, nextPort, listener));
+				nextPort ++;
+			}
 			else
 				LogDebug("Unrecognized debug IP type, ignoring\n");
+
+			//Debug: delay to serialize log messages
+			usleep(100 * 1000);
 		}
 	}
 
@@ -241,8 +269,42 @@ void GPIOListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> 
 		GPIOSCPIServer server(client.Detach(), baseAddress);
 		server.MainLoop();
 	}
+}
 
-	exit(1);
+void ILA8b10bListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> listener)
+{
+	LogDebug("ILA8b10bListenerThread running on port %d\n", (int)port);
+
+	listener->Bind(port);
+	listener->Listen();
+
+	while(true)
+	{
+		Socket client = listener->Accept();
+		if(!client.IsValid())
+			break;
+
+		ILA8b10bSCPIServer server(client.Detach(), baseAddress);
+		server.MainLoop();
+	}
+}
+
+void VIOListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> listener)
+{
+	LogDebug("VIOListenerThread running on port %d\n", (int)port);
+
+	listener->Bind(port);
+	listener->Listen();
+
+	while(true)
+	{
+		Socket client = listener->Accept();
+		if(!client.IsValid())
+			break;
+
+		VIOSCPIServer server(client.Detach(), baseAddress);
+		server.MainLoop();
+	}
 }
 
 uint32_t ReadRegister(uint32_t addr)
@@ -284,4 +346,22 @@ void OnQuit(int /*signal*/)
 		sock->Close();
 
 	exit(0);
+}
+
+/**
+	@brief Like std::to_string, but output in hex
+ */
+string to_string_hex(uint64_t n, bool zeropad, int len)
+{
+	char format[32];
+	if(zeropad)
+		snprintf(format, sizeof(format), "%%0%dlx", len);
+	else if(len > 0)
+		snprintf(format, sizeof(format), "%%%dlx", len);
+	else
+		snprintf(format, sizeof(format), "%%lx");
+
+	char tmp[32];
+	snprintf(tmp, sizeof(tmp), format, n);
+	return tmp;
 }

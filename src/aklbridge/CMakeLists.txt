@@ -2,6 +2,8 @@
 #C++ compilation
 add_executable(aklbridge
 	GPIOSCPIServer.cpp
+	ILA8b10bSCPIServer.cpp
+	VIOSCPIServer.cpp
 	#WaveformServerThread.cpp
 	main.cpp
 )

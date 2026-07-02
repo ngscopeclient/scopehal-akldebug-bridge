@@ -30,22 +30,22 @@
 /**
 	@file
 	@author Andrew D. Zonenberg
-	@brief Declaration of GPIOSCPIServer
+	@brief Declaration of VIOSCPIServer
  */
 
-#ifndef GPIOSCPIServer_h
-#define GPIOSCPIServer_h
+#ifndef VIOSCPIServer_h
+#define VIOSCPIServer_h
 
 #include "../../lib/scpi-server-tools/SCPIServer.h"
 
 /**
-	@brief SCPI server for APB_GPIO IP
+	@brief SCPI server for APB_VIO IP
  */
-class GPIOSCPIServer : public SCPIServer
+class VIOSCPIServer : public SCPIServer
 {
 public:
-	GPIOSCPIServer(ZSOCKET sock, uint32_t baseAddress);
-	virtual ~GPIOSCPIServer();
+	VIOSCPIServer(ZSOCKET sock, uint32_t baseAddress);
+	virtual ~VIOSCPIServer();
 
 protected:
 
@@ -66,6 +66,12 @@ protected:
 		const std::string& cmd) override;
 
 	uint32_t m_baseAddress;
+
+	std::vector<std::string> m_inputNames;
+	std::vector<uint32_t> m_inputWidths;
+
+	std::vector<std::string> m_outputNames;
+	std::vector<uint32_t> m_outputWidths;
 };
 
 #endif
