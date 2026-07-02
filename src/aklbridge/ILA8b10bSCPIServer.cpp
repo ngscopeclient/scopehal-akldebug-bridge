@@ -131,6 +131,14 @@ bool ILA8b10bSCPIServer::OnQuery(
 	if(cmd == "*IDN")
 		SendReply(GetMake() + "," + GetModel() + "," + GetSerial() + "," + GetFirmwareVersion());
 
+	else if(subject == "MEM")
+	{
+		if(cmd == "DEPTH")
+			SendReply(to_string(m_depth));
+		else
+			return false;
+	}
+
 	else if(subject == "TRIG")
 	{
 		if(cmd == "STAT")
@@ -162,18 +170,22 @@ bool ILA8b10bSCPIServer::OnQuery(
 		//for now assume trigger position is the midpoint of the buffer
 		uint32_t bufstart = (trigsample - (rows / 2)) % rows;
 
-		//Read the data buffer
+		//Read the entire buffer
+		double start = GetTime();
+		vector<uint64_t> buf;
+		buf.resize(rows);
 		for(uint32_t i=0; i<rows; i++)
 		{
-			auto addr = (bufstart + i) % rows;
-			auto base = m_dataBaseAddress + addr*8;
-			uint32_t a = ReadRegister(m_dataBaseAddress + addr*8);
-			uint32_t b = ReadRegister(m_dataBaseAddress + addr*8 + 4);
-			//LogTrace("addr = %08x a = %08x b = %08x\n", addr, a, b);
-
-			uint64_t w = (static_cast<uint64_t>(b) << 32) | a;
-			SendReply(to_string_hex(w));
+			uint32_t a = ReadRegister(m_dataBaseAddress + i*8);
+			uint32_t b = ReadRegister(m_dataBaseAddress + i*8 + 4);
+			buf[i] = (static_cast<uint64_t>(b) << 32) | a;
 		}
+		double dt = GetTime() - start;
+		LogDebug("Readout of %d words took %.3f sec\n", rows*2, dt);
+
+		//Stream it out to the client
+		for(uint32_t i=0; i<rows; i++)
+			SendReply(to_string_hex(buf[(bufstart + i) % rows]));
 
 		//Reset the trigger system for next round
 		WriteRegister(m_baseAddress + 0, 0x0);

@@ -33,6 +33,7 @@
 #include "../../lib/log/log.h"
 #include "../../lib/xptools/Socket.h"
 #include "../../lib/xptools/UART.h"
+#include "../../lib/xptools/TimeUtil.h"
 
 #ifdef _WIN32
 #include <windows.h>
