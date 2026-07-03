@@ -68,6 +68,8 @@ protected:
 	uint32_t m_baseAddress;
 	uint32_t m_dataBaseAddress;
 	uint32_t m_depth;
+	uint32_t m_period;
+	uint32_t m_triggerIdx;
 
 	bool m_triggerArmed;
 };

@@ -42,6 +42,8 @@ using namespace std;
 ILA8b10bSCPIServer::ILA8b10bSCPIServer(ZSOCKET sock, uint32_t baseAddress)
 	: SCPIServer(sock)
 	, m_baseAddress(baseAddress)
+	, m_depth(0)
+	, m_period(0)
 	, m_triggerArmed(false)
 {
 	LogTrace("Initializing ILA8b10b at 0x%08x\n", baseAddress);
@@ -56,6 +58,9 @@ ILA8b10bSCPIServer::ILA8b10bSCPIServer(ZSOCKET sock, uint32_t baseAddress)
 	uint32_t words = rows * 2;
 	LogTrace("Depth is %u symbols (%u rows, %u words)\n", m_depth, rows, words);
 
+	m_period = ReadRegister(baseAddress + 0x10);
+	LogTrace("Sample period is %u ps\n", m_period);
+
 	//Read trigger status
 	auto trigstat = ReadRegister(baseAddress + 0x0);
 	LogTrace("Trigger status = %08x\n", trigstat);
@@ -64,6 +69,9 @@ ILA8b10bSCPIServer::ILA8b10bSCPIServer(ZSOCKET sock, uint32_t baseAddress)
 		m_triggerArmed = true;
 	else
 		m_triggerArmed = false;
+
+	m_triggerIdx = ReadRegister(baseAddress + 0x14);
+	LogTrace("Trigger is at sample %u\n", m_triggerIdx);
 }
 
 ILA8b10bSCPIServer::~ILA8b10bSCPIServer()
@@ -88,6 +96,19 @@ bool ILA8b10bSCPIServer::OnCommand(
 			m_triggerArmed = true;
 		}
 
+		//TODO: stop without arming
+
+		//Trigger position
+		else if( (cmd == "POS") && args.size() == 1)
+		{
+			uint32_t idx = stoul(args[0]);
+			if(idx > (m_depth / 4) )
+				idx = (m_depth / 4) - 1;
+
+			m_triggerIdx = idx;
+			WriteRegister(m_baseAddress + 0x14, idx);
+		}
+
 		else
 			return false;
 	}
@@ -109,7 +130,7 @@ string ILA8b10bSCPIServer::GetMake()
 
 string ILA8b10bSCPIServer::GetModel()
 {
-	return "APB ILA8b10b";
+	return "APB SERDES ILA 8b10b";
 }
 
 string ILA8b10bSCPIServer::GetSerial()
@@ -135,6 +156,8 @@ bool ILA8b10bSCPIServer::OnQuery(
 	{
 		if(cmd == "DEPTH")
 			SendReply(to_string(m_depth));
+		else if(cmd == "PERIOD")
+			SendReply(to_string(m_period));
 		else
 			return false;
 	}
@@ -155,7 +178,8 @@ bool ILA8b10bSCPIServer::OnQuery(
 				SendReply("STOP");
 		}
 
-		//TODO: query trigger position
+		else if(cmd == "POS")
+			SendReply(to_string(m_triggerIdx));
 
 		else
 			return false;
@@ -167,8 +191,7 @@ bool ILA8b10bSCPIServer::OnQuery(
 		auto trigsample = ReadRegister(m_baseAddress + 0x4);
 		LogTrace("Trigger index = %d\n", trigsample);
 
-		//for now assume trigger position is the midpoint of the buffer
-		uint32_t bufstart = (trigsample - (rows / 2)) % rows;
+		uint32_t bufstart = (trigsample - m_triggerIdx) % rows;
 
 		//Read the entire buffer
 		vector<uint32_t> rxbuf;
@@ -182,8 +205,10 @@ bool ILA8b10bSCPIServer::OnQuery(
 			buf[i] = (static_cast<uint64_t>(rxbuf[i*2 + 1]) << 32) | rxbuf[i*2];
 
 		//Stream it out to the client after offsetting
+		string ret = "";
 		for(uint32_t i=0; i<rows; i++)
-			SendReply(to_string_hex(buf[(bufstart + i) % rows]));
+			ret += to_string_hex(buf[(bufstart + i) % rows]) + ",";
+		SendReply(ret);
 
 		//Reset the trigger system for next round
 		WriteRegister(m_baseAddress + 0, 0x0);
