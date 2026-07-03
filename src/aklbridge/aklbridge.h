@@ -53,7 +53,7 @@ extern std::string g_model;
 extern std::string g_serial;
 
 extern UART* g_uart;
-extern std::mutex g_mutex;
+extern std::recursive_mutex g_mutex;
 
 extern volatile bool g_waveformThreadQuit;
 
@@ -62,16 +62,18 @@ extern bool g_triggerOneShot;
 
 enum opcode_t
 {
-	OP_RESET	= 0x80,
-	OP_WRITE_32	= 0x81,
-	OP_READ_32	= 0x82,
+	OP_RESET		= 0x80,
+	OP_WRITE_32		= 0x81,
+	OP_READ_32		= 0x82,
+	OP_READ_32_BULK	= 0x83,
 
-	OP_GET_BASE	= 0xfd,
-	OP_IDCODE	= 0xfe,
-	OP_NOP		= 0xff
+	OP_GET_BASE		= 0xfd,
+	OP_IDCODE		= 0xfe,
+	OP_NOP			= 0xff
 };
 
 uint32_t ReadRegister(uint32_t addr);
+void ReadRegisterBulk(uint32_t addr, uint32_t size, uint32_t* outbuf);
 void WriteRegister(uint32_t addr, uint32_t value);
 std::string to_string_hex(uint64_t n, bool zeropad = false, int len = 0);
 

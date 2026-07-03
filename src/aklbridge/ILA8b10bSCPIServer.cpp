@@ -171,19 +171,17 @@ bool ILA8b10bSCPIServer::OnQuery(
 		uint32_t bufstart = (trigsample - (rows / 2)) % rows;
 
 		//Read the entire buffer
-		double start = GetTime();
+		vector<uint32_t> rxbuf;
+		rxbuf.resize(rows*2);
+		ReadRegisterBulk(m_dataBaseAddress, rows*2, &rxbuf[0]);
+
+		//Convert to int64
 		vector<uint64_t> buf;
 		buf.resize(rows);
 		for(uint32_t i=0; i<rows; i++)
-		{
-			uint32_t a = ReadRegister(m_dataBaseAddress + i*8);
-			uint32_t b = ReadRegister(m_dataBaseAddress + i*8 + 4);
-			buf[i] = (static_cast<uint64_t>(b) << 32) | a;
-		}
-		double dt = GetTime() - start;
-		LogDebug("Readout of %d words took %.3f sec\n", rows*2, dt);
+			buf[i] = (static_cast<uint64_t>(rxbuf[i*2 + 1]) << 32) | rxbuf[i*2];
 
-		//Stream it out to the client
+		//Stream it out to the client after offsetting
 		for(uint32_t i=0; i<rows; i++)
 			SendReply(to_string_hex(buf[(bufstart + i) % rows]));
 

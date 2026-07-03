@@ -75,7 +75,7 @@ void OnQuit(int signal);
 
 bool g_triggerArmed;
 
-mutex g_mutex;
+recursive_mutex g_mutex;
 UART* g_uart = nullptr;
 
 vector<shared_ptr<Socket> > g_listenerSockets;
@@ -309,7 +309,7 @@ void VIOListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> l
 
 uint32_t ReadRegister(uint32_t addr)
 {
-	lock_guard<mutex> lock(g_mutex);
+	lock_guard<recursive_mutex> lock(g_mutex);
 
 	uint8_t txbuf[5];
 	txbuf[0] = OP_READ_32;
@@ -321,9 +321,28 @@ uint32_t ReadRegister(uint32_t addr)
 	return regval;
 }
 
+void ReadRegisterBulk(uint32_t addr, uint32_t size, uint32_t* outbuf)
+{
+	lock_guard<recursive_mutex> lock(g_mutex);
+
+	if(size > 65535)
+		LogFatal("sizes > 64k not implemented\n");
+
+	//Send the read command
+	uint8_t txbuf[7];
+	txbuf[0] = OP_READ_32_BULK;
+	memcpy(&txbuf[1], &addr, sizeof(addr));
+	txbuf[5] = size & 0xff;
+	txbuf[6] = (size >> 8) & 0xff;
+	g_uart->Write(txbuf, sizeof(txbuf));
+
+	//Read the data back
+	g_uart->Read((uint8_t*)outbuf, size * sizeof(uint32_t));
+}
+
 void WriteRegister(uint32_t addr, uint32_t value)
 {
-	lock_guard<mutex> lock(g_mutex);
+	lock_guard<recursive_mutex> lock(g_mutex);
 
 	uint8_t txbuf[9];
 	txbuf[0] = OP_WRITE_32;
