@@ -4,7 +4,7 @@ project(scopehal-akldebug-bridge)
 set(WARNINGS "-Wall -Wextra -Wuninitialized ")
 set(WARNINGS "${WARNINGS} -Wshadow -Wunsafe-loop-optimizations -Wpedantic -Wcast-align -Wwrite-strings")
 set(WARNINGS "${WARNINGS} -Wmissing-declarations -Wvla")
-set(CMAKE_CXX_FLAGS "-g -fopenmp ${WARNINGS} --std=c++17 -mtune=native")
+set(CMAKE_CXX_FLAGS "-g ${WARNINGS} --std=c++20 -mtune=native")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -fsanitize=address")
 

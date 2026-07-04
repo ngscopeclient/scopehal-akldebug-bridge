@@ -36,6 +36,7 @@
 #include "aklbridge.h"
 #include "GPIOSCPIServer.h"
 #include "ILA8b10bSCPIServer.h"
+#include "ILASCPIServer.h"
 #include "VIOSCPIServer.h"
 #include <signal.h>
 #include <string.h>
@@ -83,6 +84,7 @@ vector<unique_ptr<thread> > g_listenerThreads;
 
 void GPIOListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> listener);
 void ILA8b10bListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> listener);
+void ILAListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> listener);
 void VIOListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> listener);
 
 int main(int argc, char* argv[])
@@ -227,6 +229,16 @@ int main(int argc, char* argv[])
 				g_listenerThreads.push_back(make_unique<thread>(ILA8b10bListenerThread, base, nextPort, listener));
 				nextPort ++;
 			}
+			else if(stype == "ILA_")
+			{
+				//Create the server socket
+				auto listener = make_shared<Socket>(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+				g_listenerSockets.push_back(listener);
+
+				//Run the server
+				g_listenerThreads.push_back(make_unique<thread>(ILAListenerThread, base, nextPort, listener));
+				nextPort ++;
+			}
 			else
 				LogDebug("Unrecognized debug IP type, ignoring\n");
 
@@ -285,6 +297,24 @@ void ILA8b10bListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Sock
 			break;
 
 		ILA8b10bSCPIServer server(client.Detach(), baseAddress);
+		server.MainLoop();
+	}
+}
+
+void ILAListenerThread(uint32_t baseAddress, uint16_t port, shared_ptr<Socket> listener)
+{
+	LogDebug("ILAListenerThread running on port %d\n", (int)port);
+
+	listener->Bind(port);
+	listener->Listen();
+
+	while(true)
+	{
+		Socket client = listener->Accept();
+		if(!client.IsValid())
+			break;
+
+		ILASCPIServer server(client.Detach(), baseAddress);
 		server.MainLoop();
 	}
 }
