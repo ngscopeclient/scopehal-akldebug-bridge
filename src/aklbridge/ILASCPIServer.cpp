@@ -71,19 +71,22 @@ ILASCPIServer::ILASCPIServer(ZSOCKET sock, uint32_t baseAddress)
 	else
 		m_triggerArmed = false;
 
+	//Read the entire descriptor ROM in one go
+	const uint32_t maxports = 16;
+	const uint32_t regsPerPort = 8;
+	vector<uint32_t> regs;
+	regs.resize(maxports * regsPerPort);
+	ReadRegisterBulk(baseAddress + 0x1000, regs.size(), &regs[0]);
+
 	//Enumerate probe ports
 	LogTrace("Probes\n");
 	uint32_t totalProbeWidth = 0;
-	for(uint32_t iport = 0; iport < 16; iport ++)
+	for(uint32_t iport = 0; iport < maxports; iport ++)
 	{
 		LogIndenter li2;
 
-		uint32_t nameBlock[8];
-		for(uint32_t j=0; j < 8; j ++)
-			nameBlock[j] = ReadRegister(baseAddress + 0x1000 + 0x20*iport + 4*j);
-
 		char name[33] = {0};
-		memcpy(name, nameBlock, 32);
+		memcpy(name, &regs[8*iport], 32);
 
 		//Extract width packed into the same register
 		uint32_t width = name[31];
