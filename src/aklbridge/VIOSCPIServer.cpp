@@ -65,7 +65,11 @@ VIOSCPIServer::VIOSCPIServer(ZSOCKET sock, uint32_t baseAddress)
 
 		string sname(name);
 		if(sname.empty())
-			break;
+		{
+			m_outputNames.push_back("");
+			m_outputWidths.push_back(0);
+			continue;
+		}
 		reverse(sname.begin(), sname.end());
 
 		m_outputNames.push_back(sname);
@@ -93,7 +97,11 @@ VIOSCPIServer::VIOSCPIServer(ZSOCKET sock, uint32_t baseAddress)
 
 		string sname(name);
 		if(sname.empty())
-			break;
+		{
+			m_outputNames.push_back("");
+			m_outputWidths.push_back(0);
+			continue;
+		}
 		reverse(sname.begin(), sname.end());
 
 		m_inputNames.push_back(sname);

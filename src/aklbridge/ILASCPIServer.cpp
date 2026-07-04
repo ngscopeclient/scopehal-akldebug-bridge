@@ -91,7 +91,11 @@ ILASCPIServer::ILASCPIServer(ZSOCKET sock, uint32_t baseAddress)
 
 		string sname(name);
 		if(sname.empty())
-			break;
+		{
+			m_names.push_back("");
+			m_widths.push_back(0);
+			continue;
+		}
 		reverse(sname.begin(), sname.end());
 
 		m_names.push_back(sname);
@@ -234,7 +238,7 @@ bool ILASCPIServer::OnQuery(
 	else if(subject.find("PROBE") == 0)
 	{
 		int idx = atoi(subject.c_str() + 5);
-		if( (idx >= 8) || (idx < 0) )
+		if( (idx >= 16) || (idx < 0) )
 			return false;
 
 		if(cmd == "WIDTH")
