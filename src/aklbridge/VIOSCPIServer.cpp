@@ -46,18 +46,20 @@ VIOSCPIServer::VIOSCPIServer(ZSOCKET sock, uint32_t baseAddress)
 	LogTrace("Initializing VIO at 0x%08x\n", baseAddress);
 	LogIndenter li;
 
+	//Read the entire register block in bulk, even though we also get values
+	//It's faster that way
+	vector<uint32_t> regs;
+	regs.resize(128);
+
 	//Enumerate output ports
 	LogTrace("Outputs\n");
+	ReadRegisterBulk(baseAddress, regs.size(), &regs[0]);
 	for(uint32_t iport = 0; iport < 8; iport ++)
 	{
 		LogIndenter li2;
 
-		uint32_t nameBlock[8];
-		for(uint32_t j=0; j < 8; j ++)
-			nameBlock[j] = ReadRegister(baseAddress + 0x000 + 0x40*iport + 4*j);
-
 		char name[33] = {0};
-		memcpy(name, nameBlock, 32);
+		memcpy(name, &regs[16*iport], 32);
 
 		//Extract width packed into the same register
 		uint32_t width = name[31];
@@ -80,16 +82,13 @@ VIOSCPIServer::VIOSCPIServer(ZSOCKET sock, uint32_t baseAddress)
 
 	//Enumerate input ports
 	LogTrace("Inputs\n");
+	ReadRegisterBulk(baseAddress + 0x200, regs.size(), &regs[0]);
 	for(uint32_t iport = 0; iport < 8; iport ++)
 	{
 		LogIndenter li2;
 
-		uint32_t nameBlock[8];
-		for(uint32_t j=0; j < 8; j ++)
-			nameBlock[j] = ReadRegister(baseAddress + 0x200 + 0x40*iport + 4*j);
-
 		char name[33] = {0};
-		memcpy(name, nameBlock, 32);
+		memcpy(name, &regs[16*iport], 32);
 
 		//Extract width packed into the same register
 		uint32_t width = name[31];
