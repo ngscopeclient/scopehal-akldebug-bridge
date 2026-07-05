@@ -69,9 +69,11 @@ protected:
 
 	std::vector<std::string> m_inputNames;
 	std::vector<uint32_t> m_inputWidths;
+	std::vector<uint64_t> m_inputValues;
 
 	std::vector<std::string> m_outputNames;
 	std::vector<uint32_t> m_outputWidths;
+	std::vector<uint64_t> m_outputValues;
 };
 
 #endif

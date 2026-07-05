@@ -118,6 +118,9 @@ VIOSCPIServer::VIOSCPIServer(ZSOCKET sock, uint32_t baseAddress)
 		m_outputNames.push_back("");
 	while(m_outputWidths.size() < 8)
 		m_outputWidths.push_back(0);
+
+	m_inputValues.resize(8);
+	m_outputValues.resize(8);
 }
 
 VIOSCPIServer::~VIOSCPIServer()
@@ -146,6 +149,55 @@ bool VIOSCPIServer::OnCommand(
 
 			WriteRegister(m_baseAddress + 0x40*idx + 0x20, value & 0xffffffff);
 			WriteRegister(m_baseAddress + 0x40*idx + 0x24, value >> 32);
+		}
+	}
+
+	else if(cmd == "TRIG")
+	{
+		//Read the entire register block in bulk, even though we also get names
+		//It's faster that way
+		vector<uint32_t> regs;
+		regs.resize(256);
+		ReadRegisterBulk(m_baseAddress, regs.size(), &regs[0]);
+
+		//Output ports
+		for(int i=0; i<8; i++)
+		{
+			uint64_t value = regs[0x10*i + 0x9];
+			value <<= 32;
+			value |= regs[0x10*i + 0x8];
+
+			//Bitmask off dontcare values from address decoding of high bits
+			auto width = m_outputWidths[i];
+			uint64_t mask = 0xffffffff'ffffffffLL;
+			if(width < 64)
+			{
+				mask >>= width;
+				mask <<= width;
+				value &= ~mask;
+			}
+
+			m_outputValues[i] = value;
+		}
+
+		//Input ports
+		for(int i=0; i<8; i++)
+		{
+			uint64_t value = regs[0x80 + 0x10*i + 0x9];
+			value <<= 32;
+			value |= regs[0x80 + 0x10*i + 0x8];
+
+			//Bitmask off dontcare values from address decoding of high bits
+			auto width = m_outputWidths[i];
+			uint64_t mask = 0xffffffff'ffffffffLL;
+			if(width < 64)
+			{
+				mask >>= width;
+				mask <<= width;
+				value &= ~mask;
+			}
+
+			m_inputValues[i] = value;
 		}
 	}
 
@@ -195,23 +247,7 @@ bool VIOSCPIServer::OnQuery(
 			return false;
 
 		if(cmd == "VALUE")
-		{
-			uint64_t value = ReadRegister(m_baseAddress + 0x40*idx + 0x24);
-			value <<= 32;
-			value |= ReadRegister(m_baseAddress + 0x40*idx + 0x20);
-
-			//Bitmask off dontcare values from address decoding of high bits
-			auto width = m_outputWidths[idx];
-			uint64_t mask = 0xffffffff'ffffffffLL;
-			if(width < 64)
-			{
-				mask >>= width;
-				mask <<= width;
-				value &= ~mask;
-			}
-
-			SendReply(to_string_hex(value));
-		}
+			SendReply(to_string_hex(m_outputValues[idx]));
 
 		else if(cmd == "WIDTH")
 			SendReply(to_string(m_outputWidths[idx]));
@@ -230,23 +266,7 @@ bool VIOSCPIServer::OnQuery(
 			return false;
 
 		if(cmd == "VALUE")
-		{
-			uint64_t value = ReadRegister(m_baseAddress + 0x200 + 0x40*idx + 0x24);
-			value <<= 32;
-			value |= ReadRegister(m_baseAddress + 0x200 + 0x40*idx + 0x20);
-
-			//Bitmask off dontcare values from address decoding of high bits
-			auto width = m_inputWidths[idx];
-			uint64_t mask = 0xffffffff'ffffffffLL;
-			if(width < 64)
-			{
-				mask >>= width;
-				mask <<= width;
-				value &= ~mask;
-			}
-
-			SendReply(to_string_hex(value));
-		}
+			SendReply(to_string_hex(m_inputValues[idx]));
 
 		else if(cmd == "WIDTH")
 			SendReply(to_string(m_inputWidths[idx]));
