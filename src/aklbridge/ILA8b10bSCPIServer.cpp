@@ -191,7 +191,7 @@ bool ILA8b10bSCPIServer::OnQuery(
 		auto trigsample = ReadRegister(m_baseAddress + 0x4);
 		LogTrace("Trigger index = %d\n", trigsample);
 
-		uint32_t bufstart = (trigsample - m_triggerIdx) % rows;
+		uint32_t bufstart = (m_depth + m_triggerIdx - trigsample) % rows;
 
 		//Read the entire buffer
 		vector<uint32_t> rxbuf;
@@ -207,7 +207,7 @@ bool ILA8b10bSCPIServer::OnQuery(
 		//Stream it out to the client after offsetting
 		string ret = "";
 		for(uint32_t i=0; i<rows; i++)
-			ret += to_string_hex(buf[(bufstart + i) % rows]) + ",";
+			ret += to_string_hex(buf[(i - bufstart) % rows]) + ",";
 		SendReply(ret);
 
 		//Reset the trigger system for next round

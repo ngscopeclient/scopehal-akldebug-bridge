@@ -155,8 +155,8 @@ bool ILASCPIServer::OnCommand(
 		else if( (cmd == "POS") && args.size() == 1)
 		{
 			uint32_t idx = stoul(args[0]);
-			if(idx > (m_depth / 4) )
-				idx = (m_depth / 4) - 1;
+			if(idx > m_depth )
+				idx = m_depth - 1;
 
 			m_triggerIdx = idx;
 			WriteRegister(m_baseAddress + 0x14, idx);
@@ -254,25 +254,36 @@ bool ILASCPIServer::OnQuery(
 			return false;
 	}
 
-
 	else if(cmd == "DATA")
 	{
 		//Figure out the offset in the circular buffer
 		auto trigsample = ReadRegister(m_baseAddress + 0x4);
-		uint32_t bufstart = (trigsample - m_triggerIdx) % m_depth;
-		LogTrace("Trigger index = %d\n", trigsample);
+		uint32_t bufstart = (m_depth + m_triggerIdx - trigsample) % m_depth;
 
 		//Read the entire buffer
 		vector<uint32_t> rxbuf;
 		rxbuf.resize(m_wordsPerRowRounded * m_depth);
-		ReadRegisterBulk(m_dataBaseAddress, rxbuf.size(), &rxbuf[0]);
+		uint32_t BLOCK_SIZE = 32768;
+		if(rxbuf.size() <= BLOCK_SIZE)
+			ReadRegisterBulk(m_dataBaseAddress, rxbuf.size(), &rxbuf[0]);
+		else
+		{
+			for(size_t i=0; i<rxbuf.size(); i += BLOCK_SIZE)
+			{
+				size_t end = i + BLOCK_SIZE;
+				if(end > rxbuf.size())
+					end = rxbuf.size();
+				size_t len = end - i;
+				ReadRegisterBulk(m_dataBaseAddress + i, len, &rxbuf[i]);
+			}
+		}
 
 		//Print it
 		string ret;
 		for(size_t i=0; i<m_depth; i++)
 		{
 			//Get the sample index of the row
-			uint32_t rowbase = (bufstart + i) % m_depth;
+			uint32_t rowbase = (i - bufstart) % m_depth;
 			rowbase *= m_wordsPerRowRounded;
 
 			for(ssize_t j=m_wordsPerRowRounded-1; j>=0; j--)
