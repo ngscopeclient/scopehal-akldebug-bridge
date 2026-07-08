@@ -188,7 +188,7 @@ bool VIOSCPIServer::OnCommand(
 			value |= regs[0x80 + 0x10*i + 0x8];
 
 			//Bitmask off dontcare values from address decoding of high bits
-			auto width = m_outputWidths[i];
+			auto width = m_inputWidths[i];
 			uint64_t mask = 0xffffffff'ffffffffLL;
 			if(width < 64)
 			{

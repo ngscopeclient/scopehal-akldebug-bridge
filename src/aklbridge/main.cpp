@@ -183,7 +183,7 @@ int main(int argc, char* argv[])
 		LogNotice("Debug ROM address: 0x%08x\n", rombase);
 
 		//Walk the ROM
-		const uint32_t rom_max = 4;	//TODO increase this
+		const uint32_t rom_max = 16;
 		for(uint32_t i=0; i<rom_max; i++)
 		{
 			auto type = ReadRegister(rombase + i*8);

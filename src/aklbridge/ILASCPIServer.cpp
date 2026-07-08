@@ -36,6 +36,8 @@
 
 using namespace std;
 
+#define MAX_CHANNELS 32
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Construction / destruction
 
@@ -72,16 +74,15 @@ ILASCPIServer::ILASCPIServer(ZSOCKET sock, uint32_t baseAddress)
 		m_triggerArmed = false;
 
 	//Read the entire descriptor ROM in one go
-	const uint32_t maxports = 16;
 	const uint32_t regsPerPort = 8;
 	vector<uint32_t> regs;
-	regs.resize(maxports * regsPerPort);
+	regs.resize(MAX_CHANNELS * regsPerPort);
 	ReadRegisterBulk(baseAddress + 0x1000, regs.size(), &regs[0]);
 
 	//Enumerate probe ports
 	LogTrace("Probes\n");
 	uint32_t totalProbeWidth = 0;
-	for(uint32_t iport = 0; iport < maxports; iport ++)
+	for(uint32_t iport = 0; iport < MAX_CHANNELS; iport ++)
 	{
 		LogIndenter li2;
 
@@ -241,7 +242,7 @@ bool ILASCPIServer::OnQuery(
 	else if(subject.find("PROBE") == 0)
 	{
 		int idx = atoi(subject.c_str() + 5);
-		if( (idx >= 16) || (idx < 0) )
+		if( (idx >= MAX_CHANNELS) || (idx < 0) )
 			return false;
 
 		if(cmd == "WIDTH")
