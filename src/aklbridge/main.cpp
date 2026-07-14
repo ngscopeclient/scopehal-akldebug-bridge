@@ -367,7 +367,8 @@ void ReadRegisterBulk(uint32_t addr, uint32_t size, uint32_t* outbuf)
 	g_uart->Write(txbuf, sizeof(txbuf));
 
 	//Read the data back
-	g_uart->Read((uint8_t*)outbuf, size * sizeof(uint32_t));
+	if(!g_uart->Read((uint8_t*)outbuf, size * sizeof(uint32_t)))
+		LogError("Read failed\n");
 }
 
 void WriteRegister(uint32_t addr, uint32_t value)

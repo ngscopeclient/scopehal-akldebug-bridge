@@ -148,7 +148,8 @@ bool VIOSCPIServer::OnCommand(
 			sscanf(args[0].c_str(), "%" SCNx64, &value);
 
 			WriteRegister(m_baseAddress + 0x40*idx + 0x20, value & 0xffffffff);
-			WriteRegister(m_baseAddress + 0x40*idx + 0x24, value >> 32);
+			if(m_outputWidths[idx] > 32)
+				WriteRegister(m_baseAddress + 0x40*idx + 0x24, value >> 32);
 		}
 	}
 

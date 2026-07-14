@@ -37,6 +37,7 @@
 using namespace std;
 
 #define MAX_CHANNELS 32
+#define BLOCK_SIZE 32768
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Construction / destruction
@@ -47,6 +48,7 @@ ILASCPIServer::ILASCPIServer(ZSOCKET sock, uint32_t baseAddress)
 	, m_depth(0)
 	, m_period(0)
 	, m_triggerArmed(false)
+	, m_rxBufferStart(0)
 {
 	LogTrace("Initializing ILA at 0x%08x\n", baseAddress);
 	LogIndenter li;
@@ -167,6 +169,20 @@ bool ILASCPIServer::OnCommand(
 			return false;
 	}
 
+	else if(subject == "DOWNLOAD")
+	{
+		if(cmd == "START")
+		{
+			//Figure out the offset in the circular buffer
+			auto trigsample = ReadRegister(m_baseAddress + 0x4);
+			m_rxBufferStart = (m_depth + m_triggerIdx - trigsample) % m_depth;
+			m_rxBuffer.resize(m_wordsPerRowRounded * m_depth);
+
+			LogTrace("Start download, trigsample = %u, triggerIdx = %u, bufferStart = %u\n",
+				trigsample, m_triggerIdx, m_rxBufferStart);
+		}
+	}
+
 	else
 		return false;
 
@@ -212,6 +228,8 @@ bool ILASCPIServer::OnQuery(
 			SendReply(to_string(m_depth));
 		else if(cmd == "PERIOD")
 			SendReply(to_string(m_period));
+		else if(cmd == "ROWSIZE")
+			SendReply(to_string(m_wordsPerRowRounded));
 		else
 			return false;
 	}
@@ -255,40 +273,39 @@ bool ILASCPIServer::OnQuery(
 			return false;
 	}
 
-	else if(cmd == "DATA")
+	else if(subject == "DOWNLOAD")
 	{
-		//Figure out the offset in the circular buffer
-		auto trigsample = ReadRegister(m_baseAddress + 0x4);
-		uint32_t bufstart = (m_depth + m_triggerIdx - trigsample) % m_depth;
+		size_t block = atoi(cmd.c_str());
+		if(block >= m_rxBuffer.size())
+			return false;
 
-		//Read the entire buffer
-		vector<uint32_t> rxbuf;
-		rxbuf.resize(m_wordsPerRowRounded * m_depth);
-		uint32_t BLOCK_SIZE = 32768;
-		if(rxbuf.size() <= BLOCK_SIZE)
-			ReadRegisterBulk(m_dataBaseAddress, rxbuf.size(), &rxbuf[0]);
+		LogTrace("Download block %zu\n", block);
+		if(m_rxBuffer.size() <= BLOCK_SIZE)
+			ReadRegisterBulk(m_dataBaseAddress, m_rxBuffer.size(), &m_rxBuffer[0]);
 		else
 		{
-			for(size_t i=0; i<rxbuf.size(); i += BLOCK_SIZE)
-			{
-				size_t end = i + BLOCK_SIZE;
-				if(end > rxbuf.size())
-					end = rxbuf.size();
-				size_t len = end - i;
-				ReadRegisterBulk(m_dataBaseAddress + i, len, &rxbuf[i]);
-			}
+			size_t end = block + BLOCK_SIZE;
+			if(end > m_rxBuffer.size())
+				end = m_rxBuffer.size();
+			size_t len = end - block;
+			ReadRegisterBulk(m_dataBaseAddress + block*4, len, &m_rxBuffer[block]);
 		}
 
+		SendReply("OK");
+	}
+
+	else if(cmd == "DATA")
+	{
 		//Print it
 		string ret;
 		for(size_t i=0; i<m_depth; i++)
 		{
 			//Get the sample index of the row
-			uint32_t rowbase = (i - bufstart) % m_depth;
+			uint32_t rowbase = (i - m_rxBufferStart) % m_depth;
 			rowbase *= m_wordsPerRowRounded;
 
 			for(ssize_t j=m_wordsPerRowRounded-1; j>=0; j--)
-				ret += to_string_hex(rxbuf[rowbase + j], true, 8);
+				ret += to_string_hex(m_rxBuffer[rowbase + j], true, 8);
 			ret += ",";
 		}
 		SendReply(ret);

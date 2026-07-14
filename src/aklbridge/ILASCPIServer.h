@@ -78,6 +78,11 @@ protected:
 	std::vector<uint32_t> m_widths;
 
 	bool m_triggerArmed;
+
+	//Capture buffer and configuration
+	std::vector<uint32_t> m_rxBuffer;
+
+	uint32_t m_rxBufferStart;
 };
 
 #endif
