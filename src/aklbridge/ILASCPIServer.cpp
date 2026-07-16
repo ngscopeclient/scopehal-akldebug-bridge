@@ -75,40 +75,63 @@ ILASCPIServer::ILASCPIServer(ZSOCKET sock, uint32_t baseAddress)
 	else
 		m_triggerArmed = false;
 
+	//Get the length of the symbol table ROM
+	uint32_t symbolRomLen = ReadRegister(baseAddress + 0x1000);
+	LogTrace("Symbol table ROM is %u words\n", symbolRomLen);
+
 	//Read the entire descriptor ROM in one go
-	const uint32_t regsPerPort = 8;
 	vector<uint32_t> regs;
-	regs.resize(MAX_CHANNELS * regsPerPort);
-	ReadRegisterBulk(baseAddress + 0x1000, regs.size(), &regs[0]);
+	regs.resize(symbolRomLen);
+	ReadRegisterBulk(baseAddress + 0x1004, symbolRomLen, &regs[0]);
+
+	uint32_t symbolRomBytes = symbolRomLen * 4;
+	auto symbolRom = reinterpret_cast<uint8_t*>(&regs[0]);
 
 	//Enumerate probe ports
 	LogTrace("Probes\n");
 	uint32_t totalProbeWidth = 0;
-	for(uint32_t iport = 0; iport < MAX_CHANNELS; iport ++)
+	for(size_t idx = 0; idx < symbolRomBytes;)
 	{
 		LogIndenter li2;
 
-		char name[33] = {0};
-		memcpy(name, &regs[8*iport], 32);
+		//Get headers
+		uint32_t width = symbolRom[idx];
+		if(width == 0)
+			width = 256;
+		uint8_t namewidth = symbolRom[idx + 1];
 
-		//Extract width packed into the same register
-		uint32_t width = name[31];
-		name[31] = '\0';
-
-		string sname(name);
-		if(sname.empty())
+		//Sanity check width
+		if( (idx + 2 + namewidth) > symbolRomBytes)
 		{
-			m_names.push_back("");
-			m_widths.push_back(0);
-			continue;
+			LogWarning("too-long name width\n");
+			break;
 		}
-		reverse(sname.begin(), sname.end());
 
-		m_names.push_back(sname);
+		//Empty name means we're in zero padding at the end, stop
+		if(namewidth == 0)
+			break;
+
+		//Extract name, in reverse order because SV indexes from right to left so it has to be swapped
+		string name;
+		name.resize(namewidth);
+		memcpy(&name[0], symbolRom + idx + 2, namewidth);
+		reverse(name.begin(), name.end());
+
+		LogTrace("[%zu] name=%-16s width=%d\n", m_names.size(), name.c_str(), width);
+
+		//Save the headers
+		m_names.push_back(name);
 		m_widths.push_back(width);
 
-		LogTrace("[%u] name=%-16s width=%d\n", iport, sname.c_str(), width);
 		totalProbeWidth += width;
+		idx += namewidth + 2;
+	}
+
+	//Pad out extra channels
+	while(m_names.size() < MAX_CHANNELS)
+	{
+		m_names.push_back("");
+		m_widths.push_back(0);
 	}
 
 	LogTrace("Total probe width is %u bits\n", totalProbeWidth);
