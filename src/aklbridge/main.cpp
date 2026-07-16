@@ -182,14 +182,21 @@ int main(int argc, char* argv[])
 		uart.Read((uint8_t*)&rombase, sizeof(rombase));
 		LogNotice("Debug ROM address: 0x%08x\n", rombase);
 
+		//Get the size of the ROM
+		uint32_t romsize = ReadRegister(rombase);
+		LogNotice("ROM table has %u entries\n", romsize);
+
+		//Read the ROM
+		vector<uint32_t> rom;
+		rom.resize(romsize*2);
+		ReadRegisterBulk(rombase + 0x8, rom.size(), &rom[0]);
+
 		//Walk the ROM
-		const uint32_t rom_max = 16;
-		for(uint32_t i=0; i<rom_max; i++)
+		for(uint32_t i=0; i<romsize; i++)
 		{
-			auto type = ReadRegister(rombase + i*8);
-			auto typeswap = __builtin_bswap32(type);	//reverse endianness since string is big endian on the device
-			memcpy(idcode, &typeswap, sizeof(typeswap));
-			auto base = ReadRegister(rombase + i*8 + 4);
+			auto type = rom[i*2];
+			memcpy(idcode, &type, sizeof(type));
+			auto base = rom[i*2 + 1];
 			string stype = idcode;
 
 			//all-zero entry indicates the end of the ROM table

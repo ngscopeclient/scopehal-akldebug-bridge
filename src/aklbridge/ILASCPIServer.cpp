@@ -53,21 +53,25 @@ ILASCPIServer::ILASCPIServer(ZSOCKET sock, uint32_t baseAddress)
 	LogTrace("Initializing ILA at 0x%08x\n", baseAddress);
 	LogIndenter li;
 
+	//Bulk-read the initial configuration block
+	uint32_t config[7];
+	ReadRegisterBulk(baseAddress, 7, &config[0]);
+
 	//Read status
-	m_dataBaseAddress = ReadRegister(baseAddress + 0x8);
+	m_dataBaseAddress = config[2];
 	LogTrace("Data buffer is at 0x%08x\n", m_dataBaseAddress);
 
-	m_depth = ReadRegister(baseAddress + 0xc);
+	m_depth = config[3];
 	LogTrace("Depth is %u words\n", m_depth);
 
-	m_period = ReadRegister(baseAddress + 0x10);
+	m_period = config[4];
 	LogTrace("Sample period is %u ps\n", m_period);
 
-	m_triggerIdx = ReadRegister(baseAddress + 0x14);
+	m_triggerIdx = config[5];
 	LogTrace("Trigger is at sample %u\n", m_triggerIdx);
 
 	//Read trigger status
-	auto trigstat = ReadRegister(baseAddress + 0x0);
+	auto trigstat = config[0];
 	LogTrace("Trigger status = %08x\n", trigstat);
 
 	if(trigstat & 2)
@@ -75,14 +79,18 @@ ILASCPIServer::ILASCPIServer(ZSOCKET sock, uint32_t baseAddress)
 	else
 		m_triggerArmed = false;
 
+	//Read base address of the ROM
+	auto rombase = config[6];
+	LogTrace("Symbol table ROM is at 0x%08x\n", rombase);
+
 	//Get the length of the symbol table ROM
-	uint32_t symbolRomLen = ReadRegister(baseAddress + 0x1000);
+	uint32_t symbolRomLen = ReadRegister(rombase);
 	LogTrace("Symbol table ROM is %u words\n", symbolRomLen);
 
 	//Read the entire descriptor ROM in one go
 	vector<uint32_t> regs;
 	regs.resize(symbolRomLen);
-	ReadRegisterBulk(baseAddress + 0x1004, symbolRomLen, &regs[0]);
+	ReadRegisterBulk(rombase + 0x4, symbolRomLen, &regs[0]);
 
 	uint32_t symbolRomBytes = symbolRomLen * 4;
 	auto symbolRom = reinterpret_cast<uint8_t*>(&regs[0]);
@@ -95,27 +103,21 @@ ILASCPIServer::ILASCPIServer(ZSOCKET sock, uint32_t baseAddress)
 		LogIndenter li2;
 
 		//Get headers
-		uint32_t width = symbolRom[idx];
-		if(width == 0)
-			width = 256;
-		uint8_t namewidth = symbolRom[idx + 1];
+		uint32_t width = (symbolRom[idx+1] << 8) | (symbolRom[idx]);
+		uint32_t namewidth = (symbolRom[idx+3] << 8) | (symbolRom[idx+2]);
 
-		//Sanity check width
-		if( (idx + 2 + namewidth) > symbolRomBytes)
-		{
-			LogWarning("too-long name width\n");
+		//Sanity check width, stop if we're about to run off the end
+		if( (idx + 4 + namewidth) > symbolRomBytes)
 			break;
-		}
 
 		//Empty name means we're in zero padding at the end, stop
 		if(namewidth == 0)
 			break;
 
-		//Extract name, in reverse order because SV indexes from right to left so it has to be swapped
+		//Extract name
 		string name;
 		name.resize(namewidth);
-		memcpy(&name[0], symbolRom + idx + 2, namewidth);
-		reverse(name.begin(), name.end());
+		memcpy(&name[0], symbolRom + idx + 4, namewidth);
 
 		LogTrace("[%zu] name=%-16s width=%d\n", m_names.size(), name.c_str(), width);
 
@@ -124,7 +126,7 @@ ILASCPIServer::ILASCPIServer(ZSOCKET sock, uint32_t baseAddress)
 		m_widths.push_back(width);
 
 		totalProbeWidth += width;
-		idx += namewidth + 2;
+		idx += namewidth + 4;
 	}
 
 	//Pad out extra channels
